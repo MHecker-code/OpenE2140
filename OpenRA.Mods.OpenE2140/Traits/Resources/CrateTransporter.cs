@@ -109,13 +109,15 @@ public class CrateTransporterInfo : DockClientBaseInfo, IEditorActorOptions, IRe
 	}
 }
 
-public class CrateTransporter : DockClientBase<CrateTransporterInfo>, IRender, ISubActorParent, INotifyKilled, IResolveOrder, IOrderVoice, IIssueOrder
+public class CrateTransporter : DockClientBase<CrateTransporterInfo>, IRender, ISubActorParent, INotifyKilled, IResolveOrder, IOrderVoice, IIssueOrder, ITick
 {
 	private const string UnloadResourceCrateOrderID = "UnloadResourceCrate";
 
 	private readonly Actor actor;
 	private readonly CrateTransporterInfo info;
 	private ResourceCrate? crate;
+
+	private int respawnTick;
 
 	public override BitSet<DockType> GetDockType => this.info.DockingType;
 
@@ -163,6 +165,7 @@ public class CrateTransporter : DockClientBase<CrateTransporterInfo>, IRender, I
 
 	public override bool OnDockTick(Actor self, Actor hostActor, IDockHost host)
 	{
+		//return false;
 		if (this.IsTraitDisabled) return true;
 
 		if (host is ResourceMine resourceMine)
@@ -176,6 +179,7 @@ public class CrateTransporter : DockClientBase<CrateTransporterInfo>, IRender, I
 			this.crate.SubActor.ParentActor = null;
 			resourceRefinery.Activate(hostActor, this.crate);
 			this.crate = null;
+			//this.respawnTick = 100;
 		}
 
 		return true;
@@ -284,4 +288,25 @@ public class CrateTransporter : DockClientBase<CrateTransporterInfo>, IRender, I
 
 		return null;
 	}
+
+    void ITick.Tick(Actor self)
+    {
+        if (this.crate != null)
+            return;
+
+        //if (--this.respawnTick <= 0)
+        //{
+        //	var crateActor = self.World.CreateActor(
+        //		false,
+        //		this.info.CrateActor,
+        //		new TypeDictionary
+        //		{
+        //			new ParentActorInit(this.actor),
+        //			new LocationInit(this.actor.Location),
+        //			new OwnerInit(this.actor.Owner)
+        //		});
+        //	this.crate = crateActor.Trait<ResourceCrate>();
+        //	this.crate.SubActor.ParentActor = this.actor;
+        //}
+    }
 }
