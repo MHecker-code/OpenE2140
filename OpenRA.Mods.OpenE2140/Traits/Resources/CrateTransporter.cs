@@ -15,8 +15,10 @@ using JetBrains.Annotations;
 using OpenRA.Graphics;
 using OpenRA.Mods.Common;
 using OpenRA.Mods.Common.Graphics;
+using OpenRA.Mods.Common.Orders;
 using OpenRA.Mods.Common.Traits;
 using OpenRA.Mods.Common.Traits.Render;
+using OpenRA.Mods.OpenE2140.Activites.Resources;
 using OpenRA.Primitives;
 using OpenRA.Traits;
 
@@ -40,6 +42,18 @@ public class CrateTransporterInfo : DockClientBaseInfo, IEditorActorOptions, IRe
 
 	[Desc("Maximum amount of the initial resources slider in the map editor.")]
 	public readonly int EditorMaximumInitialResourcesDisplayOrder = 500;
+
+	[VoiceReference]
+	[Desc("Voice to be played when ordered to unload.")]
+	public readonly string UnloadVoice = "Action";
+
+	[CursorReference]
+	[Desc("Cursor to display when unloading crate.")]
+	public readonly string CrateUnloadCursor = "deliver";
+
+	[CursorReference]
+	[Desc("Cursor to display when unloading crate.")]
+	public readonly string CrateUnloadBlockedCursor = "generic-blocked";
 
 	[Desc("The resource crate actor. Make sure it's the same for ResourceMine actor.")]
 	public readonly string CrateActor = "crate";
@@ -95,8 +109,10 @@ public class CrateTransporterInfo : DockClientBaseInfo, IEditorActorOptions, IRe
 	}
 }
 
-public class CrateTransporter : DockClientBase<CrateTransporterInfo>, IRender, ISubActorParent, INotifyKilled
+public class CrateTransporter : DockClientBase<CrateTransporterInfo>, IRender, ISubActorParent, INotifyKilled, IResolveOrder, IOrderVoice, IIssueOrder
 {
+	private const string UnloadResourceCrateOrderID = "UnloadResourceCrate";
+
 	private readonly Actor actor;
 	private readonly CrateTransporterInfo info;
 	private ResourceCrate? crate;
@@ -165,6 +181,24 @@ public class CrateTransporter : DockClientBase<CrateTransporterInfo>, IRender, I
 		return true;
 	}
 
+	internal bool CanUnloadAt(Actor self, CPos targetLocation)
+	{
+		return !self.World.ActorMap.AnyActorsAt(targetLocation, SubCell.FullCell, a => a != self);
+	}
+
+	internal void ReserveUnloadLocation(CPos targetLocation)
+	{
+		if (this.crate == null)
+			return;
+
+		this.crate.SubActor.OnUnloading(targetLocation);
+	}
+
+	internal void CancelUnload()
+	{
+		this.crate?.SubActor.OnUnloadCancel();
+	}
+
 	void INotifyKilled.Killed(Actor self, AttackInfo e)
 	{
 		this.crate?.Actor.Trait<ISubActor>()?.OnParentKilled(this.crate.Actor, self);
@@ -194,5 +228,60 @@ public class CrateTransporter : DockClientBase<CrateTransporterInfo>, IRender, I
 			result.AddRange(render.ScreenBounds(this.crate.Actor, wr));
 
 		return result;
+	}
+
+	public ResourceCrate? UnloadCrate(Actor self)
+	{
+		var crate = this.crate;
+		if (crate != null)
+		{
+			this.crate = null;
+
+			crate.SubActor.ParentActor = null;
+		}
+
+		return crate;
+	}
+
+	void IResolveOrder.ResolveOrder(Actor self, Order order)
+	{
+		if (order.OrderString == UnloadResourceCrateOrderID)
+		{
+			var target = order.Target;
+			if (target.Type != TargetType.Actor)
+				return;
+
+			if (this.crate == null)
+				return;
+
+			self.QueueActivity(new CrateUnload(self, self.Location));
+		}
+	}
+
+	string? IOrderVoice.VoicePhraseForOrder(Actor self, Order order)
+	{
+		if (this.IsTraitDisabled)
+			return null;
+
+		if (order.OrderString == UnloadResourceCrateOrderID) // && CanDockAt(order.Target.Actor, false, true))
+			return this.info.UnloadVoice;
+
+		return null;
+	}
+
+	IEnumerable<IOrderTargeter> IIssueOrder.Orders
+	{
+		get
+		{
+			yield return new DeployOrderTargeter(UnloadResourceCrateOrderID, 5, () => this.crate != null ? this.info.CrateUnloadCursor : this.info.CrateUnloadBlockedCursor);
+		}
+	}
+
+	Order? IIssueOrder.IssueOrder(Actor self, IOrderTargeter order, in Target target, bool queued)
+	{
+		if (order.OrderID == UnloadResourceCrateOrderID)
+			return new Order(order.OrderID, self, target, queued);
+
+		return null;
 	}
 }

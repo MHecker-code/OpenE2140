@@ -36,6 +36,8 @@ public class SubActor : ISubActor, IFacing, IOccupySpace, ITick, INotifyAddedToW
 	private WRot orientation;
 	private CPos location;
 
+	private bool isUnloading;
+
 	public readonly Actor Actor;
 
 	public Actor? ParentActor
@@ -116,7 +118,7 @@ public class SubActor : ISubActor, IFacing, IOccupySpace, ITick, INotifyAddedToW
 
 	void ITick.Tick(Actor self)
 	{
-		if (this.parentActor == null)
+		if (this.parentActor == null || this.isUnloading)
 		{
 			return;
 		}
@@ -160,10 +162,22 @@ public class SubActor : ISubActor, IFacing, IOccupySpace, ITick, INotifyAddedToW
 		}
 	}
 
-	public CPos TopLeft => this.parentActor?.OccupiesSpace?.TopLeft ?? this.Actor.World.Map.CellContaining(this.centerPosition);
+	public CPos TopLeft
+	{
+		get
+		{
+			if (this.isUnloading)
+				return this.location;
+
+			return this.parentActor?.OccupiesSpace?.TopLeft ?? this.Actor.World.Map.CellContaining(this.centerPosition);
+		}
+	}
 
 	public (CPos, SubCell)[] OccupiedCells()
 	{
+		if (this.isUnloading)
+			return new[] { (this.location, SubCell.FullCell) };
+
 		return this.parentActor?.OccupiesSpace?.OccupiedCells() ?? new[] { (this.location, SubCell.FullCell) };
 	}
 
@@ -175,8 +189,42 @@ public class SubActor : ISubActor, IFacing, IOccupySpace, ITick, INotifyAddedToW
 	public void SetLocation(CPos location, WPos? centerPosition = null)
 	{
 		this.RemoveInfluence();
+
 		this.location = location;
 		this.centerPosition = centerPosition.GetValueOrDefault(this.Actor.World.Map.CenterOfCell(location));
+
 		this.AddInfluence();
+	}
+
+	internal void OnUnloading(CPos targetLocation)
+	{
+		this.RemoveInfluence();
+
+		this.location = targetLocation;
+
+		this.centerPosition = this.Actor.World.Map.CenterOfCell(this.location);
+
+		this.Actor.World.AddFrameEndTask(w =>
+		{
+			if (!this.Actor.IsInWorld)
+				w.Add(this.Actor);
+		});
+		this.isUnloading = true;
+
+		this.AddInfluence();
+	}
+
+	internal void OnUnloadCancel()
+	{
+		this.RemoveInfluence();
+		this.isUnloading = false;
+		this.Actor.World.AddFrameEndTask(w => w.Remove(this.Actor));
+	}
+
+	internal void UnloadComplete()
+	{
+		this.isUnloading = false;
+
+		this.Actor.World.UpdateMaps(this.Actor, this);
 	}
 }
