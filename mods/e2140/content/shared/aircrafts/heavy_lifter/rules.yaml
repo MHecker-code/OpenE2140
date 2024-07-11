@@ -23,6 +23,7 @@ shared_aircrafts_heavy_lifter:
 	CrateTransporter:
 		Offset: 0,0,-192
 		ZOffset: 0
+	DockClientManager:
 	RevealsShroud:
 		Range: 2c896
 	WithMoveSound:
